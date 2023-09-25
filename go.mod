@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/mdp/qrterminal/v3 v3.0.0
-	go.mau.fi/whatsmeow v0.0.0-20230805111647-405414b9b5c0
+	go.mau.fi/whatsmeow v0.0.0-20230916142552-a743fdc23bf1
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -17,5 +17,3 @@ require (
 	golang.org/x/crypto v0.13.0 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
-
-replace go.mau.fi/whatsmeow => ../
