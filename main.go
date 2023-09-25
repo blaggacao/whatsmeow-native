@@ -168,6 +168,11 @@ func handleCmd(cmd string, args []string) {
 			panic(err)
 		}
 		fmt.Println("Linking code:", linkingCode)
+	case "get-contacts":
+		contacts, _ := cli.Store.Contacts.GetAllContacts()
+		for contact := range contacts {
+			fmt.Println("Contact:", contact)
+		}
 	case "reconnect":
 		cli.Disconnect()
 		err := cli.Connect()
