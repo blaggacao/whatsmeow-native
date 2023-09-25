@@ -1,4 +1,4 @@
-module go.mau.fi/whatsmeow/mdtest
+module peasec.de/whatsmeow-native
 
 go 1.19
 
