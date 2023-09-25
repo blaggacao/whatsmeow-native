@@ -3,4 +3,5 @@ whatsmeow-native
 *.bak
 *.json
 *.png
+*.swp
 *.jpe
