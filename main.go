@@ -168,10 +168,61 @@ func handleCmd(cmd string, args []string) {
 			panic(err)
 		}
 		fmt.Println("Linking code:", linkingCode)
-	case "get-contacts":
+	case "list-contacts":
 		contacts, _ := cli.Store.Contacts.GetAllContacts()
 		for contact := range contacts {
 			fmt.Println("Contact:", contact)
+		}
+	case "sendimg":
+		if len(args) < 2 {
+			log.Errorf("Usage: sendimg <jid> <image path> [caption]")
+			return
+		}
+		recipient, ok := parseJID(args[0])
+		if !ok {
+			return
+		}
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			log.Errorf("Failed to read %s: %v", args[0], err)
+			return
+		}
+		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaImage)
+		if err != nil {
+			log.Errorf("Failed to upload file: %v", err)
+			return
+		}
+		msg := &waProto.Message{ImageMessage: &waProto.ImageMessage{
+			Caption:       proto.String(strings.Join(args[2:], " ")),
+			Url:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      proto.String(http.DetectContentType(data)),
+			FileEncSha256: uploaded.FileEncSHA256,
+			FileSha256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}}
+		resp, err := cli.SendMessage(context.Background(), recipient, msg)
+		if err != nil {
+			log.Errorf("Error sending image message: %v", err)
+		} else {
+			log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
+		}
+	case "send":
+		if len(args) < 2 {
+			log.Errorf("Usage: send <jid> <text>")
+			return
+		}
+		recipient, ok := parseJID(args[0])
+		if !ok {
+			return
+		}
+		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
+		resp, err := cli.SendMessage(context.Background(), recipient, msg)
+		if err != nil {
+			log.Errorf("Error sending message: %v", err)
+		} else {
+			log.Infof("Message sent (server timestamp: %s)", resp.Timestamp)
 		}
 	case "reconnect":
 		cli.Disconnect()
@@ -503,22 +554,6 @@ func handleCmd(cmd string, args []string) {
 		if err != nil {
 			log.Errorf("Failed to set disappearing timer: %v", err)
 		}
-	case "send":
-		if len(args) < 2 {
-			log.Errorf("Usage: send <jid> <text>")
-			return
-		}
-		recipient, ok := parseJID(args[0])
-		if !ok {
-			return
-		}
-		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
-		resp, err := cli.SendMessage(context.Background(), recipient, msg)
-		if err != nil {
-			log.Errorf("Error sending message: %v", err)
-		} else {
-			log.Infof("Message sent (server timestamp: %s)", resp.Timestamp)
-		}
 	case "sendpoll":
 		if len(args) < 7 {
 			log.Errorf("Usage: sendpoll <jid> <max answers> <question> -- <option 1> / <option 2> / ...")
@@ -626,41 +661,6 @@ func handleCmd(cmd string, args []string) {
 			log.Errorf("Error sending revocation: %v", err)
 		} else {
 			log.Infof("Revocation sent (server timestamp: %s)", resp.Timestamp)
-		}
-	case "sendimg":
-		if len(args) < 2 {
-			log.Errorf("Usage: sendimg <jid> <image path> [caption]")
-			return
-		}
-		recipient, ok := parseJID(args[0])
-		if !ok {
-			return
-		}
-		data, err := os.ReadFile(args[1])
-		if err != nil {
-			log.Errorf("Failed to read %s: %v", args[0], err)
-			return
-		}
-		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaImage)
-		if err != nil {
-			log.Errorf("Failed to upload file: %v", err)
-			return
-		}
-		msg := &waProto.Message{ImageMessage: &waProto.ImageMessage{
-			Caption:       proto.String(strings.Join(args[2:], " ")),
-			Url:           proto.String(uploaded.URL),
-			DirectPath:    proto.String(uploaded.DirectPath),
-			MediaKey:      uploaded.MediaKey,
-			Mimetype:      proto.String(http.DetectContentType(data)),
-			FileEncSha256: uploaded.FileEncSHA256,
-			FileSha256:    uploaded.FileSHA256,
-			FileLength:    proto.Uint64(uint64(len(data))),
-		}}
-		resp, err := cli.SendMessage(context.Background(), recipient, msg)
-		if err != nil {
-			log.Errorf("Error sending image message: %v", err)
-		} else {
-			log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
 		}
 	case "setstatus":
 		if len(args) == 0 {

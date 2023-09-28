@@ -37,4 +37,4 @@ binary may be found in the `handleCmd` function of the _main.go_ file.
 Here is an excerpt of available commands:
 
 * `pair-phone <number>`
-* ``
+* `list-contacts`
