@@ -169,12 +169,14 @@ func handleCmd(cmd string, args []string) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("Linking code:", linkingCode)
+		fmt.Println(linkingCode)
 	case "list-contacts":
 		contacts, _ := cli.Store.Contacts.GetAllContacts()
-		for contact := range contacts {
-			fmt.Println("Contact:", contact)
+		jsonString, err := json.Marshal(contacts)
+		if err != nil {
+			fmt.Println("{}")
 		}
+		fmt.Println(string(jsonString))
 	case "send-img":
 		if len(args) < 2 {
 			log.Errorf("Usage: send-img <jid> <image path> [caption]")

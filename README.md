@@ -16,8 +16,7 @@ the most important basic functions so that the WhatsApp infrastructure can be us
 other applications. This means that the following functions are implemented:
 
 * Pair a phone via mobile number and resulting pair code
-* Get list of WhatsApp contacts
-* Get informed about new contacts
+* Get a list of WhatsApp contacts
 * Send files to WhatsApp contacts
 * Receive files from WhatsApp contacts
 
@@ -32,10 +31,50 @@ go build
 ```
 
 Afterwards, the resulting `whatsmeow-native` binary can be executed. The available commands to control the
-binary may be found in the `handleCmd` function of the _main.go_ file.
+binary may be found in the `handleCmd` function of the _main.go_ file. You may want to start the binary with
+the `-device-name` flag to customize the device name shown inside WhatsApp.
 
 Here is an excerpt of available commands:
 
-* `pair-phone <number>`
-* `list-contacts`
-* `send-img <jid> <image path> [caption]`
+### Pair phone
+
+`pair-phone <number>`
+
+Returns: An 8-character string, separated by a dash.
+
+Example: `AB2C-3Yh4`
+
+### List contacts
+
+`list-contacts`
+
+Returns: A JSON dictionary with the contacts' phone numbers as keys and a `ContactInfo` object as value.
+
+Example:
+
+```json
+{
+    "491771234567@s.whatsapp.net": {
+        "Found":true,
+        "FirstName":"Alice",
+        "FullName":"Alice Mayer",
+        "PushName":"Alice",
+        "BusinessName":""
+    },
+    "491777654321@s.whatsapp.net": {
+        "Found":true,
+        "FirstName":"Bob",
+        "FullName":"Bob Juan",
+        "PushName":"Bob",
+        "BusinessName":""
+    }
+}
+```
+
+### Send image
+
+`send-img <jid> <image path> [caption]`
+
+### Receive image
+
+
