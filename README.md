@@ -38,3 +38,4 @@ Here is an excerpt of available commands:
 
 * `pair-phone <number>`
 * `list-contacts`
+* `send-img <jid> <image path> [caption]`

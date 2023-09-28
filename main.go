@@ -45,6 +45,7 @@ var debugLogs = flag.Bool("debug", false, "Enable debug logs?")
 var dbDialect = flag.String("db-dialect", "sqlite3", "Database dialect (sqlite3 or postgres)")
 var dbAddress = flag.String("db-address", "file:whatsmeow.db?_foreign_keys=on", "Database address")
 var requestFullSync = flag.Bool("request-full-sync", false, "Request full (1 year) history sync when logging in?")
+var deviceName = flag.String("device-name", "whatsmeow", "Name of device shown inside WhatsApp")
 var pairRejectChan = make(chan bool, 1)
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	if *requestFullSync {
 		store.DeviceProps.RequireFullSync = proto.Bool(true)
 	}
+	store.DeviceProps.Os = proto.String(*deviceName)
 	log = waLog.Stdout("Main", logLevel, true)
 
 	dbLog := waLog.Stdout("Database", logLevel, true)
@@ -173,9 +175,9 @@ func handleCmd(cmd string, args []string) {
 		for contact := range contacts {
 			fmt.Println("Contact:", contact)
 		}
-	case "sendimg":
+	case "send-img":
 		if len(args) < 2 {
-			log.Errorf("Usage: sendimg <jid> <image path> [caption]")
+			log.Errorf("Usage: send-img <jid> <image path> [caption]")
 			return
 		}
 		recipient, ok := parseJID(args[0])
