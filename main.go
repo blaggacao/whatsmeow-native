@@ -40,7 +40,7 @@ import (
 var cli *whatsmeow.Client
 var log waLog.Logger
 
-var logLevel = "INFO"
+var logLevel = "WARN"
 var debugLogs = flag.Bool("debug", false, "Enable debug logs?")
 var dbDialect = flag.String("db-dialect", "sqlite3", "Database dialect (sqlite3 or postgres)")
 var dbAddress = flag.String("db-address", "file:whatsmeow.db?_foreign_keys=on", "Database address")
@@ -898,6 +898,25 @@ func handler(rawEvt interface{}) {
 				return
 			}
 			log.Infof("Saved image in message to %s", path)
+			fmt.Printf("{type: \"image\", messageId: \"%s\", contact: \"%s\", path: \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
+		}
+
+		docm := evt.Message.GetDocumentMessage()
+		if docm != nil {
+			data, err := cli.Download(docm)
+			if err != nil {
+				log.Errorf("Failed to download file: %v", err)
+				return
+			}
+			exts, _ := mime.ExtensionsByType(docm.GetMimetype())
+			path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+			err = os.WriteFile(path, data, 0600)
+			if err != nil {
+				log.Errorf("Failed to save file: %v", err)
+				return
+			}
+			log.Infof("Saved file in message to %s", path)
+			fmt.Printf("{type: \"file\", messageId: \"%s\", contact: \"%s\", path: \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
 		}
 	case *events.Receipt:
 		if evt.Type == events.ReceiptTypeRead || evt.Type == events.ReceiptTypeReadSelf {

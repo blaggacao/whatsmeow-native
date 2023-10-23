@@ -77,11 +77,33 @@ Example:
 
 ### Receive image
 
+Whenever whatsmeow receives an image, it automatically downloads it from the WhatsApp servers and prints a JSON in the following format:
+
+```json
+{
+    type: "image",
+    messageId: "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+    contact: "491771234567@s.whatsapp.net",
+    path: "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456.jpe"
+}
+```
+
 ### Send file
 
 `send-file <jid> <file path> [caption]`
 
 ### Receive file
+
+Whenever whatsmeow receives a file in a so-called "Document message," it automatically downloads it from the WhatsApp servers and prints a JSON in the following format:
+
+```json
+{
+    type: "file",
+    messageId: "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+    contact: "491771234567@s.whatsapp.net",
+    path: "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456.pdf"
+}
+```
 
 ## Maintenance
 
