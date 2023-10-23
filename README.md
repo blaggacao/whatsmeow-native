@@ -77,4 +77,10 @@ Example:
 
 ### Receive image
 
+## Maintenance
 
+To update Go dependencies, especially `go.mau.fi/whatsmeow`, call
+
+```
+go get [dependency]
+```
