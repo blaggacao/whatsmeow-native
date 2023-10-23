@@ -77,6 +77,12 @@ Example:
 
 ### Receive image
 
+### Send file
+
+`send-file <jid> <file path> [caption]`
+
+### Receive file
+
 ## Maintenance
 
 To update Go dependencies, especially `go.mau.fi/whatsmeow`, call

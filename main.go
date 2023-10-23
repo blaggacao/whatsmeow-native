@@ -212,6 +212,42 @@ func handleCmd(cmd string, args []string) {
 		} else {
 			log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
 		}
+	case "send-file":
+		if len(args) < 2 {
+			log.Errorf("Usage: send-file <jid> <file path> [caption]")
+			return
+		}
+		recipient, ok := parseJID(args[0])
+		if !ok {
+			return
+		}
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			log.Errorf("Failed to read %s: %v", args[0], err)
+			return
+		}
+		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaDocument)
+		if err != nil {
+			log.Errorf("Failed to upload file: %v", err)
+			return
+		}
+		msg := &waProto.Message{DocumentMessage: &waProto.DocumentMessage{
+			Caption:       proto.String(strings.Join(args[2:], " ")),
+			Url:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      proto.String(http.DetectContentType(data)),
+			FileName:      proto.String("file"),
+			FileEncSha256: uploaded.FileEncSHA256,
+			FileSha256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}}
+		resp, err := cli.SendMessage(context.Background(), recipient, msg)
+		if err != nil {
+			log.Errorf("Error sending file message: %v", err)
+		} else {
+			log.Infof("File message sent (server timestamp: %s)", resp.Timestamp)
+		}
 	case "send":
 		if len(args) < 2 {
 			log.Errorf("Usage: send <jid> <text>")
