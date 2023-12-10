@@ -903,7 +903,7 @@ func handler(rawEvt interface{}) {
 				return
 			}
 			log.Infof("Saved image in message to %s", path)
-			fmt.Printf("{type: \"image\", messageId: \"%s\", contact: \"%s\", path: \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
+			fmt.Printf("{\"type\": \"image\", \"messageId\": \"%s\", \"contact\": \"%s\", \"path\": \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
 		}
 
 		docm := evt.Message.GetDocumentMessage()
@@ -924,7 +924,7 @@ func handler(rawEvt interface{}) {
 				return
 			}
 			log.Infof("Saved file in message to %s", path)
-			fmt.Printf("{type: \"file\", messageId: \"%s\", contact: \"%s\", path: \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
+			fmt.Printf("{\"type\": \"file\", \"messageId\": \"%s\", \"contact\": \"%s\", \"path\": \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
 		}
 	case *events.Receipt:
 		if evt.Type == types.ReceiptTypeRead || evt.Type == types.ReceiptTypeReadSelf {
