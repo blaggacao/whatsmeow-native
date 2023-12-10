@@ -914,7 +914,10 @@ func handler(rawEvt interface{}) {
 				return
 			}
 			exts, _ := mime.ExtensionsByType(docm.GetMimetype())
-			path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+			path := evt.Info.ID
+			if len(exts) != 0 {
+				path = fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+			}
 			err = os.WriteFile(path, data, 0600)
 			if err != nil {
 				log.Errorf("Failed to save file: %v", err)
