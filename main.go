@@ -987,6 +987,8 @@ func handler(rawEvt interface{}) {
 			log.Infof("%s is now online", evt.From)
 		}
 	case *events.HistorySync:
+		return
+		/*
 		id := atomic.AddInt32(&historySyncID, 1)
 		fileName := fmt.Sprintf("history-%d-%d.json", startupTime, id)
 		file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE, 0600)
@@ -1003,6 +1005,7 @@ func handler(rawEvt interface{}) {
 		}
 		log.Infof("Wrote history sync to %s", fileName)
 		_ = file.Close()
+		*/
 	case *events.AppState:
 		log.Debugf("App state event: %+v / %+v", evt.Index, evt.SyncActionValue)
 	case *events.KeepAliveTimeout:
