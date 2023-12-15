@@ -11,12 +11,14 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"mime"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -896,14 +898,35 @@ func handler(rawEvt interface{}) {
 				return
 			}
 			exts, _ := mime.ExtensionsByType(img.GetMimetype())
-			path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+			filename := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+
+			dirPath := "downloads"
+			if _, err := os.Stat(dirPath); errors.Is(err, os.ErrNotExist) {
+				err := os.Mkdir(dirPath, os.ModePerm)
+				if err != nil {
+					log.Errorf("Failed to create downloads directory: %v", err)
+					return
+				}
+			}
+
+			path := path.Join(dirPath, filename)
 			err = os.WriteFile(path, data, 0600)
 			if err != nil {
 				log.Errorf("Failed to save image: %v", err)
 				return
 			}
 			log.Infof("Saved image in message to %s", path)
-			fmt.Printf("{\"type\": \"image\", \"messageId\": \"%s\", \"contact\": \"%s\", \"path\": \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
+
+			jsonData := map[string]string{"type": "image",
+			                          "messageId": evt.Info.ID,
+			                          "contact": evt.Info.SourceString(),
+			                          "path": path}
+			jsonString, err := json.Marshal(jsonData)
+			if err != nil {
+				log.Errorf("Failed to generate notification : %v", err)
+				return
+			}
+			fmt.Println(string(jsonString))
 		}
 
 		docm := evt.Message.GetDocumentMessage()
@@ -914,17 +937,38 @@ func handler(rawEvt interface{}) {
 				return
 			}
 			exts, _ := mime.ExtensionsByType(docm.GetMimetype())
-			path := evt.Info.ID
+			filename := evt.Info.ID
 			if len(exts) != 0 {
-				path = fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+				filename = fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
 			}
+
+			dirPath := "downloads"
+			if _, err := os.Stat(dirPath); errors.Is(err, os.ErrNotExist) {
+				err := os.Mkdir(dirPath, os.ModePerm)
+				if err != nil {
+					log.Errorf("Failed to create downloads directory: %v", err)
+					return
+				}
+			}
+
+			path := path.Join(dirPath, filename)
 			err = os.WriteFile(path, data, 0600)
 			if err != nil {
 				log.Errorf("Failed to save file: %v", err)
 				return
 			}
 			log.Infof("Saved file in message to %s", path)
-			fmt.Printf("{\"type\": \"file\", \"messageId\": \"%s\", \"contact\": \"%s\", \"path\": \"%s\"}\n", evt.Info.ID, evt.Info.SourceString(), path)
+
+			jsonData := map[string]string{"type": "file",
+			                          "messageId": evt.Info.ID,
+			                          "contact": evt.Info.SourceString(),
+			                          "path": path}
+			jsonString, err := json.Marshal(jsonData)
+			if err != nil {
+				log.Errorf("Failed to generate notification : %v", err)
+				return
+			}
+			fmt.Println(string(jsonString))
 		}
 	case *events.Receipt:
 		if evt.Type == types.ReceiptTypeRead || evt.Type == types.ReceiptTypeReadSelf {
