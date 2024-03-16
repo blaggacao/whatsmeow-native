@@ -362,6 +362,10 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 			keyIDs[i] = decoded
 		}
 		cli.DangerousInternals().RequestAppStateKeys(context.Background(), keyIDs)
+
+	case "whoami":
+		output <- fmt.Sprint(cli.DangerousInternals().GetOwnID())
+
 	case "unavailable-request":
 		if len(args) < 3 {
 			log.Errorf("Usage: unavailable-request <chat JID> <sender JID> <message ID>")
