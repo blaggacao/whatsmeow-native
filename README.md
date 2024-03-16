@@ -105,6 +105,13 @@ Whenever whatsmeow receives a file in a so-called "Document message," it automat
 }
 ```
 
+## Simple HTTP Server
+
+To run in HTTP server mode, add `-bind-address ':8000'`. You can then send commands to the sever, for example
+```console
+curl -X POST -d '{"cmd": "send", "args": ["1234567890", "hello", "world"]}' http://localhost:8080/command
+```
+
 ## Maintenance
 
 To update Go dependencies, especially `go.mau.fi/whatsmeow`, call

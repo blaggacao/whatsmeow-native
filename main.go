@@ -48,6 +48,7 @@ var dbDialect = flag.String("db-dialect", "sqlite3", "Database dialect (sqlite3 
 var dbAddress = flag.String("db-address", "file:whatsmeow.db?_foreign_keys=on", "Database address")
 var requestFullSync = flag.Bool("request-full-sync", false, "Request full (1 year) history sync when logging in?")
 var deviceName = flag.String("device-name", "whatsmeow", "Name of device shown inside WhatsApp")
+var bindAddress = flag.String("bind-address", "", "Start as HTTP server, and bind to this address and port")
 var pairRejectChan = make(chan bool, 1)
 
 func main() {
@@ -107,6 +108,7 @@ func main() {
 
 	c := make(chan os.Signal)
 	input := make(chan string)
+	server := makeServer(*bindAddress)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		defer close(input)
@@ -118,11 +120,27 @@ func main() {
 			}
 		}
 	}()
+	if *bindAddress != "" {
+		go func() {
+			log.Infof("Starting server on :8080")
+			if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				log.Errorf("HTTP server error: %v", err)
+			}
+		}()
+	}
 	for {
 		select {
 		case <-c:
 			log.Infof("Interrupt received, exiting")
 			cli.Disconnect()
+			if *bindAddress != "" {
+				shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
+				defer shutdownRelease()
+
+				if err := server.Shutdown(shutdownCtx); err != nil {
+					log.Errorf("HTTP server shutdown error: %v", err)
+				}
+			}
 			return
 		case cmd := <-input:
 			if len(cmd) == 0 {
@@ -918,9 +936,9 @@ func handler(rawEvt interface{}) {
 			log.Infof("Saved image in message to %s", path)
 
 			jsonData := map[string]string{"type": "image",
-			                          "messageId": evt.Info.ID,
-			                          "contact": evt.Info.SourceString(),
-			                          "path": path}
+				"messageId": evt.Info.ID,
+				"contact":   evt.Info.SourceString(),
+				"path":      path}
 			jsonString, err := json.Marshal(jsonData)
 			if err != nil {
 				log.Errorf("Failed to generate notification : %v", err)
@@ -960,9 +978,9 @@ func handler(rawEvt interface{}) {
 			log.Infof("Saved file in message to %s", path)
 
 			jsonData := map[string]string{"type": "file",
-			                          "messageId": evt.Info.ID,
-			                          "contact": evt.Info.SourceString(),
-			                          "path": path}
+				"messageId": evt.Info.ID,
+				"contact":   evt.Info.SourceString(),
+				"path":      path}
 			jsonString, err := json.Marshal(jsonData)
 			if err != nil {
 				log.Errorf("Failed to generate notification : %v", err)
@@ -989,22 +1007,22 @@ func handler(rawEvt interface{}) {
 	case *events.HistorySync:
 		return
 		/*
-		id := atomic.AddInt32(&historySyncID, 1)
-		fileName := fmt.Sprintf("history-%d-%d.json", startupTime, id)
-		file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE, 0600)
-		if err != nil {
-			log.Errorf("Failed to open file to write history sync: %v", err)
-			return
-		}
-		enc := json.NewEncoder(file)
-		enc.SetIndent("", "  ")
-		err = enc.Encode(evt.Data)
-		if err != nil {
-			log.Errorf("Failed to write history sync: %v", err)
-			return
-		}
-		log.Infof("Wrote history sync to %s", fileName)
-		_ = file.Close()
+			id := atomic.AddInt32(&historySyncID, 1)
+			fileName := fmt.Sprintf("history-%d-%d.json", startupTime, id)
+			file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE, 0600)
+			if err != nil {
+				log.Errorf("Failed to open file to write history sync: %v", err)
+				return
+			}
+			enc := json.NewEncoder(file)
+			enc.SetIndent("", "  ")
+			err = enc.Encode(evt.Data)
+			if err != nil {
+				log.Errorf("Failed to write history sync: %v", err)
+				return
+			}
+			log.Infof("Wrote history sync to %s", fileName)
+			_ = file.Close()
 		*/
 	case *events.AppState:
 		log.Debugf("App state event: %+v / %+v", evt.Index, evt.SyncActionValue)
