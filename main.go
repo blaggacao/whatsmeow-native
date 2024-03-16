@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -48,7 +49,7 @@ var dbDialect = flag.String("db-dialect", "sqlite3", "Database dialect (sqlite3 
 var dbAddress = flag.String("db-address", "file:whatsmeow.db?_foreign_keys=on", "Database address")
 var requestFullSync = flag.Bool("request-full-sync", false, "Request full (1 year) history sync when logging in?")
 var deviceName = flag.String("device-name", "whatsmeow", "Name of device shown inside WhatsApp")
-var bindAddress = flag.String("bind-address", "", "Start as HTTP server, and bind to this address and port")
+var bindSocket = flag.String("bind-socket", "", "Start as HTTP server, and bind to tcp or a unix domain socket")
 var pairRejectChan = make(chan bool, 1)
 
 func main() {
@@ -108,7 +109,7 @@ func main() {
 
 	c := make(chan os.Signal)
 	input := make(chan string)
-	server := makeServer(*bindAddress)
+	server := makeServer(*bindSocket)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		defer close(input)
@@ -120,10 +121,24 @@ func main() {
 			}
 		}
 	}()
-	if *bindAddress != "" {
+	if *bindSocket != "" {
 		go func() {
-			log.Infof("Starting server on :8080")
-			if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Infof("Starting server on ", *bindSocket)
+			var listener net.Listener
+			if strings.HasPrefix(*bindSocket, "/") {
+				listener, err = net.Listen("unix", *bindSocket)
+				if err != nil {
+					log.Errorf("Error creating Unix domain socket listener: %v", err)
+				}
+				defer os.Remove(*bindSocket) // Clean up the socket file on exit
+
+			} else {
+				listener, err = net.Listen("tcp", *bindSocket)
+				if err != nil {
+					log.Errorf("Error creating tcp listener: %v", err)
+				}
+			}
+			if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 				log.Errorf("HTTP server error: %v", err)
 			}
 		}()
@@ -133,7 +148,7 @@ func main() {
 		case <-c:
 			log.Infof("Interrupt received, exiting")
 			cli.Disconnect()
-			if *bindAddress != "" {
+			if *bindSocket != "" {
 				shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
 				defer shutdownRelease()
 
