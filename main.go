@@ -206,7 +206,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "pair-phone":
 		if len(args) < 1 {
 			log.Errorf("Usage: pair-phone <number>")
-			return
+			goto sendsome
 		}
 		linkingCode, err := cli.PairPhone(args[0], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil {
@@ -223,21 +223,21 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "send-img":
 		if len(args) < 2 {
 			log.Errorf("Usage: send-img <jid> <image path> [caption]")
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		data, err := os.ReadFile(args[1])
 		if err != nil {
 			log.Errorf("Failed to read %s: %v", args[0], err)
-			return
+			goto sendsome
 		}
 		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaImage)
 		if err != nil {
 			log.Errorf("Failed to upload file: %v", err)
-			return
+			goto sendsome
 		}
 		msg := &waProto.Message{ImageMessage: &waProto.ImageMessage{
 			Caption:       proto.String(strings.Join(args[2:], " ")),
@@ -258,21 +258,21 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "send-file":
 		if len(args) < 2 {
 			log.Errorf("Usage: send-file <jid> <file path> [caption]")
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		data, err := os.ReadFile(args[1])
 		if err != nil {
 			log.Errorf("Failed to read %s: %v", args[0], err)
-			return
+			goto sendsome
 		}
 		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaDocument)
 		if err != nil {
 			log.Errorf("Failed to upload file: %v", err)
-			return
+			goto sendsome
 		}
 		msg := &waProto.Message{DocumentMessage: &waProto.DocumentMessage{
 			Caption:       proto.String(strings.Join(args[2:], " ")),
@@ -294,11 +294,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "send":
 		if len(args) < 2 {
 			log.Errorf("Usage: send <jid> <text>")
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
@@ -334,7 +334,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "appstate":
 		if len(args) < 1 {
 			log.Errorf("Usage: appstate <types...>")
-			return
+			goto sendsome
 		}
 		names := []appstate.WAPatchName{appstate.WAPatchName(args[0])}
 		if args[0] == "all" {
@@ -350,14 +350,14 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "request-appstate-key":
 		if len(args) < 1 {
 			log.Errorf("Usage: request-appstate-key <ids...>")
-			return
+			goto sendsome
 		}
 		var keyIDs = make([][]byte, len(args))
 		for i, id := range args {
 			decoded, err := hex.DecodeString(id)
 			if err != nil {
 				log.Errorf("Failed to decode %s as hex: %v", id, err)
-				return
+				goto sendsome
 			}
 			keyIDs[i] = decoded
 		}
@@ -365,15 +365,15 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "unavailable-request":
 		if len(args) < 3 {
 			log.Errorf("Usage: unavailable-request <chat JID> <sender JID> <message ID>")
-			return
+			goto sendsome
 		}
 		chat, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		sender, ok := parseJID(args[1])
 		if !ok {
-			return
+			goto sendsome
 		}
 		resp, err := cli.SendMessage(
 			context.Background(),
@@ -386,7 +386,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "checkuser":
 		if len(args) < 1 {
 			log.Errorf("Usage: checkuser <phone numbers...>")
-			return
+			goto sendsome
 		}
 		resp, err := cli.IsOnWhatsApp(args)
 		if err != nil {
@@ -417,11 +417,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "subscribepresence":
 		if len(args) < 1 {
 			log.Errorf("Usage: subscribepresence <jid>")
-			return
+			goto sendsome
 		}
 		jid, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		err := cli.SubscribePresence(jid)
 		if err != nil {
@@ -430,18 +430,18 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "presence":
 		if len(args) == 0 {
 			log.Errorf("Usage: presence <available/unavailable>")
-			return
+			goto sendsome
 		}
-		output <- fmt.Sprintln(cli.SendPresence(types.Presence(args[0])))
+		output <- fmt.Sprint(cli.SendPresence(types.Presence(args[0])))
 	case "chatpresence":
 		if len(args) == 2 {
 			args = append(args, "")
 		} else if len(args) < 2 {
 			log.Errorf("Usage: chatpresence <jid> <composing/paused> [audio]")
-			return
+			goto sendsome
 		}
 		jid, _ := types.ParseJID(args[0])
-		output <- fmt.Sprintln(cli.SendChatPresence(jid, types.ChatPresence(args[1]), types.ChatPresenceMedia(args[2])))
+		output <- fmt.Sprint(cli.SendChatPresence(jid, types.ChatPresence(args[1]), types.ChatPresenceMedia(args[2])))
 	case "privacysettings":
 		resp, err := cli.TryFetchPrivacySettings(false)
 		if err != nil {
@@ -452,13 +452,13 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "getuser":
 		if len(args) < 1 {
 			log.Errorf("Usage: getuser <jids...>")
-			return
+			goto sendsome
 		}
 		var jids []types.JID
 		for _, arg := range args {
 			jid, ok := parseJID(arg)
 			if !ok {
-				return
+				goto sendsome
 			}
 			jids = append(jids, jid)
 		}
@@ -480,11 +480,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "getavatar":
 		if len(args) < 1 {
 			log.Errorf("Usage: getavatar <jid> [existing ID] [--preview] [--community]")
-			return
+			goto sendsome
 		}
 		jid, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		existingID := ""
 		if len(args) > 2 {
@@ -513,14 +513,14 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "getgroup":
 		if len(args) < 1 {
 			log.Errorf("Usage: getgroup <jid>")
-			return
+			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		} else if group.Server != types.GroupServer {
 			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
-			return
+			goto sendsome
 		}
 		resp, err := cli.GetGroupInfo(group)
 		if err != nil {
@@ -531,14 +531,14 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "subgroups":
 		if len(args) < 1 {
 			log.Errorf("Usage: subgroups <jid>")
-			return
+			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		} else if group.Server != types.GroupServer {
 			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
-			return
+			goto sendsome
 		}
 		resp, err := cli.GetSubGroups(group)
 		if err != nil {
@@ -551,14 +551,14 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "communityparticipants":
 		if len(args) < 1 {
 			log.Errorf("Usage: communityparticipants <jid>")
-			return
+			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		} else if group.Server != types.GroupServer {
 			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
-			return
+			goto sendsome
 		}
 		resp, err := cli.GetLinkedGroupsParticipants(group)
 		if err != nil {
@@ -578,14 +578,14 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "getinvitelink":
 		if len(args) < 1 {
 			log.Errorf("Usage: getinvitelink <jid> [--reset]")
-			return
+			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		} else if group.Server != types.GroupServer {
 			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
-			return
+			goto sendsome
 		}
 		resp, err := cli.GetGroupInviteLink(group, len(args) > 1 && args[1] == "--reset")
 		if err != nil {
@@ -596,7 +596,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "queryinvitelink":
 		if len(args) < 1 {
 			log.Errorf("Usage: queryinvitelink <link>")
-			return
+			goto sendsome
 		}
 		resp, err := cli.GetGroupInfoFromLink(args[0])
 		if err != nil {
@@ -607,7 +607,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "querybusinesslink":
 		if len(args) < 1 {
 			log.Errorf("Usage: querybusinesslink <link>")
-			return
+			goto sendsome
 		}
 		resp, err := cli.ResolveBusinessMessageLink(args[0])
 		if err != nil {
@@ -618,7 +618,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "joininvitelink":
 		if len(args) < 1 {
 			log.Errorf("Usage: acceptinvitelink <link>")
-			return
+			goto sendsome
 		}
 		groupID, err := cli.JoinGroupWithLink(args[0])
 		if err != nil {
@@ -633,16 +633,16 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "setdisappeartimer":
 		if len(args) < 2 {
 			log.Errorf("Usage: setdisappeartimer <jid> <days>")
-			return
+			goto sendsome
 		}
 		days, err := strconv.Atoi(args[1])
 		if err != nil {
 			log.Errorf("Invalid duration: %v", err)
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		err = cli.SetDisappearingTimer(recipient, time.Duration(days)*24*time.Hour)
 		if err != nil {
@@ -651,16 +651,16 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "sendpoll":
 		if len(args) < 7 {
 			log.Errorf("Usage: sendpoll <jid> <max answers> <question> -- <option 1> / <option 2> / ...")
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		maxAnswers, err := strconv.Atoi(args[1])
 		if err != nil {
 			log.Errorf("Number of max answers must be an integer")
-			return
+			goto sendsome
 		}
 		remainingArgs := strings.Join(args[2:], " ")
 		question, optionsStr, _ := strings.Cut(remainingArgs, "--")
@@ -678,20 +678,20 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "multisend":
 		if len(args) < 3 {
 			log.Errorf("Usage: multisend <jids...> -- <text>")
-			return
+			goto sendsome
 		}
 		var recipients []types.JID
 		for len(args) > 0 && args[0] != "--" {
 			recipient, ok := parseJID(args[0])
 			args = args[1:]
 			if !ok {
-				return
+				goto sendsome
 			}
 			recipients = append(recipients, recipient)
 		}
 		if len(args) == 0 {
 			log.Errorf("Usage: multisend <jids...> -- <text> (the -- is required)")
-			return
+			goto sendsome
 		}
 		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
 		for _, recipient := range recipients {
@@ -707,11 +707,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "react":
 		if len(args) < 3 {
 			log.Errorf("Usage: react <jid> <message ID> <reaction>")
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		messageID := args[1]
 		fromMe := false
@@ -743,11 +743,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "revoke":
 		if len(args) < 2 {
 			log.Errorf("Usage: revoke <jid> <message ID>")
-			return
+			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		messageID := args[1]
 		resp, err := cli.SendMessage(context.Background(), recipient, cli.BuildRevoke(recipient, types.EmptyJID, messageID))
@@ -759,7 +759,7 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "setstatus":
 		if len(args) == 0 {
 			log.Errorf("Usage: setstatus <message>")
-			return
+			goto sendsome
 		}
 		err := cli.SetStatusMessage(strings.Join(args, " "))
 		if err != nil {
@@ -770,16 +770,16 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "archive":
 		if len(args) < 2 {
 			log.Errorf("Usage: archive <jid> <action>")
-			return
+			goto sendsome
 		}
 		target, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		action, err := strconv.ParseBool(args[1])
 		if err != nil {
 			log.Errorf("invalid second argument: %v", err)
-			return
+			goto sendsome
 		}
 
 		err = cli.SendAppState(appstate.BuildArchive(target, action, time.Time{}, nil))
@@ -789,16 +789,16 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "mute":
 		if len(args) < 2 {
 			log.Errorf("Usage: mute <jid> <action>")
-			return
+			goto sendsome
 		}
 		target, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		action, err := strconv.ParseBool(args[1])
 		if err != nil {
 			log.Errorf("invalid second argument: %v", err)
-			return
+			goto sendsome
 		}
 
 		err = cli.SendAppState(appstate.BuildMute(target, action, 1*time.Hour))
@@ -808,16 +808,16 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "pin":
 		if len(args) < 2 {
 			log.Errorf("Usage: pin <jid> <action>")
-			return
+			goto sendsome
 		}
 		target, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		action, err := strconv.ParseBool(args[1])
 		if err != nil {
 			log.Errorf("invalid second argument: %v", err)
-			return
+			goto sendsome
 		}
 
 		err = cli.SendAppState(appstate.BuildPin(target, action))
@@ -834,11 +834,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "block":
 		if len(args) < 1 {
 			log.Errorf("Usage: block <jid>")
-			return
+			goto sendsome
 		}
 		jid, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		resp, err := cli.UpdateBlocklist(jid, events.BlocklistChangeActionBlock)
 		if err != nil {
@@ -849,11 +849,11 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 	case "unblock":
 		if len(args) < 1 {
 			log.Errorf("Usage: unblock <jid>")
-			return
+			goto sendsome
 		}
 		jid, ok := parseJID(args[0])
 		if !ok {
-			return
+			goto sendsome
 		}
 		resp, err := cli.UpdateBlocklist(jid, events.BlocklistChangeActionUnblock)
 		if err != nil {
@@ -862,6 +862,9 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 			log.Infof("Blocklist updated: %+v", resp)
 		}
 	}
+	goto sendsome // the catchall
+sendsome:
+	output <- ""
 }
 
 var historySyncID int32
