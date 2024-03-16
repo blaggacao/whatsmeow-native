@@ -109,6 +109,7 @@ func main() {
 
 	c := make(chan os.Signal)
 	input := make(chan string)
+	output := make(chan string)
 	server := makeServer(*bindSocket)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -174,7 +175,9 @@ func main() {
 			args := strings.Fields(cmd)
 			cmd = args[0]
 			args = args[1:]
-			go handleCmd(strings.ToLower(cmd), args)
+			go handleCmd(strings.ToLower(cmd), args, output)
+			out := <-output
+			fmt.Print(out)
 		}
 	}
 }
@@ -198,7 +201,7 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func handleCmd(cmd string, args []string) {
+func handleCmd(cmd string, args []string, output chan<- string) {
 	switch cmd {
 	case "pair-phone":
 		if len(args) < 1 {
@@ -209,14 +212,14 @@ func handleCmd(cmd string, args []string) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(linkingCode)
+		output <- linkingCode
 	case "list-contacts":
 		contacts, _ := cli.Store.Contacts.GetAllContacts()
 		jsonString, err := json.Marshal(contacts)
 		if err != nil {
-			fmt.Println("{}")
+			output <- "{}"
 		}
-		fmt.Println(string(jsonString))
+		output <- string(jsonString)
 	case "send-img":
 		if len(args) < 2 {
 			log.Errorf("Usage: send-img <jid> <image path> [caption]")
@@ -306,9 +309,20 @@ func handleCmd(cmd string, args []string) {
 		}
 	case "reconnect":
 		cli.Disconnect()
+		qrChan, _ := cli.GetQRChannel(context.Background())
 		err := cli.Connect()
 		if err != nil {
 			log.Errorf("Failed to connect: %v", err)
+		}
+		for evt := range qrChan {
+			if evt.Event == "code" {
+				// Render the QR code here
+				// e.g. qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				// or just manually `echo 2@... | qrencode -t ansiutf8` in a terminal
+				output <- evt.Code
+			} else {
+				log.Infof("Login event: %v", evt.Event)
+			}
 		}
 	case "logout":
 		err := cli.Logout()
@@ -367,8 +381,8 @@ func handleCmd(cmd string, args []string) {
 			cli.BuildUnavailableMessageRequest(chat, sender, args[2]),
 			whatsmeow.SendRequestExtra{Peer: true},
 		)
-		fmt.Println(resp)
-		fmt.Println(err)
+		output <- fmt.Sprintln(resp)
+		output <- fmt.Sprintln(err)
 	case "checkuser":
 		if len(args) < 1 {
 			log.Errorf("Usage: checkuser <phone numbers...>")
@@ -411,14 +425,14 @@ func handleCmd(cmd string, args []string) {
 		}
 		err := cli.SubscribePresence(jid)
 		if err != nil {
-			fmt.Println(err)
+			output <- fmt.Sprintln(err)
 		}
 	case "presence":
 		if len(args) == 0 {
 			log.Errorf("Usage: presence <available/unavailable>")
 			return
 		}
-		fmt.Println(cli.SendPresence(types.Presence(args[0])))
+		output <- fmt.Sprintln(cli.SendPresence(types.Presence(args[0])))
 	case "chatpresence":
 		if len(args) == 2 {
 			args = append(args, "")
@@ -427,13 +441,13 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 		jid, _ := types.ParseJID(args[0])
-		fmt.Println(cli.SendChatPresence(jid, types.ChatPresence(args[1]), types.ChatPresenceMedia(args[2])))
+		output <- fmt.Sprintln(cli.SendChatPresence(jid, types.ChatPresence(args[1]), types.ChatPresenceMedia(args[2])))
 	case "privacysettings":
 		resp, err := cli.TryFetchPrivacySettings(false)
 		if err != nil {
-			fmt.Println(err)
+			output <- fmt.Sprintln(err)
 		} else {
-			fmt.Printf("%+v\n", resp)
+			output <- fmt.Sprintf("%+v\n", resp)
 		}
 	case "getuser":
 		if len(args) < 1 {
@@ -614,8 +628,8 @@ func handleCmd(cmd string, args []string) {
 		}
 	case "getstatusprivacy":
 		resp, err := cli.GetStatusPrivacy()
-		fmt.Println(err)
-		fmt.Println(resp)
+		output <- fmt.Sprintln(err)
+		output <- fmt.Sprintln(resp)
 	case "setdisappeartimer":
 		if len(args) < 2 {
 			log.Errorf("Usage: setdisappeartimer <jid> <days>")

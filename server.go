@@ -25,9 +25,13 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	handleCmd(strings.ToLower(cmd.Cmd), cmd.Args)
+	output := make(chan string)
+	go handleCmd(strings.ToLower(cmd.Cmd), cmd.Args, output)
 
+	out := <-output
+	// Send the captured output as the response
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(out))
 }
 
 func makeServer(addr string) *http.Server {
