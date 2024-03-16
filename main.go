@@ -123,7 +123,7 @@ func main() {
 	}()
 	if *bindSocket != "" {
 		go func() {
-			log.Infof("Starting server on ", *bindSocket)
+			log.Infof("Starting server on %v", *bindSocket)
 			var listener net.Listener
 			if strings.HasPrefix(*bindSocket, "/") {
 				listener, err = net.Listen("unix", *bindSocket)
