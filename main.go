@@ -43,6 +43,7 @@ import (
 
 var cli *whatsmeow.Client
 var log waLog.Logger
+var storeContainer *sqlstore.Container
 
 var logLevel = "WARN"
 var debugLogs = flag.Bool("debug", false, "Enable debug logs?")
@@ -72,7 +73,8 @@ func main() {
 	log = waLog.Stdout("Main", logLevel, true)
 
 	dbLog := waLog.Stdout("Database", logLevel, true)
-	storeContainer, err := sqlstore.New(*dbDialect, *dbAddress, dbLog)
+	var err error
+	storeContainer, err = sqlstore.New(*dbDialect, *dbAddress, dbLog)
 	if err != nil {
 		log.Errorf("Failed to connect to database: %v", err)
 		return
@@ -83,7 +85,7 @@ func main() {
 		return
 	}
 
-	cli = whatsmeow.NewClient(device, waLog.Stdout("Client", logLevel, true))
+	cli = getClient(device, waLog.Stdout("Client", logLevel, true))
 	var isWaitingForPair atomic.Bool
 	cli.PrePairCallback = func(jid types.JID, platform, businessName string) bool {
 		isWaitingForPair.Store(true)
@@ -101,7 +103,6 @@ func main() {
 		return true
 	}
 
-	cli.AddEventHandler(handler)
 	err = cli.Connect()
 	if err != nil {
 		log.Errorf("Failed to connect: %v", err)
@@ -188,6 +189,15 @@ func main() {
 			}
 		}
 	}
+}
+
+
+func getClient(deviceStore *store.Device, clientLog waLog.Logger, ) *whatsmeow.Client {
+
+	client := whatsmeow.NewClient(deviceStore, clientLog)
+	client.AddEventHandler(handler)
+
+	return client
 }
 
 func parseJID(arg string) (types.JID, bool) {
@@ -353,6 +363,9 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 			goto sendsome
 		}
 		log.Infof("Successfully logged out")
+		device := storeContainer.NewDevice()
+		cli = getClient(device, waLog.Stdout("Client", logLevel, true))
+		log.Infof("Successfully created new client")
 		goto sendsome
 	case "appstate":
 		if len(args) < 1 {
