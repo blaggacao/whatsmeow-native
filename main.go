@@ -111,6 +111,7 @@ func main() {
 	c := make(chan os.Signal)
 	input := make(chan string)
 	output := make(chan string)
+	errChan := make(chan error)
 	server := makeServer(*bindSocket)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -176,9 +177,15 @@ func main() {
 			args := strings.Fields(cmd)
 			cmd = args[0]
 			args = args[1:]
-			go handleCmd(strings.ToLower(cmd), args, output)
-			out := <-output
-			fmt.Print(out)
+		    go handleCmd(cmd, args, output, errChan)
+			select {
+			case err := <-errChan:
+			    if err != nil {
+			        log.Errorf("%v", err)
+			    }
+			case out := <-output:
+			    fmt.Print(out)
+			}
 		}
 	}
 }
@@ -202,16 +209,17 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func handleCmd(cmd string, args []string, output chan<- string) {
+func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- error) {
 	switch cmd {
 	case "pair-phone":
 		if len(args) < 1 {
-			log.Errorf("Usage: pair-phone <number>")
+			errChan <- fmt.Errorf("Usage: pair-phone <number>")
 			goto sendsome
 		}
 		linkingCode, err := cli.PairPhone(args[0], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil {
-			panic(err)
+			errChan <- err
+			goto sendsome
 		}
 		output <- linkingCode
 	case "list-contacts":
@@ -219,276 +227,312 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 		jsonString, err := json.Marshal(contacts)
 		if err != nil {
 			output <- "{}"
+			errChan <- err
+			goto sendsome
 		}
 		output <- string(jsonString)
 	case "send-img":
 		if len(args) < 2 {
-			log.Errorf("Usage: send-img <jid> <image path> [caption]")
+			errChan <- fmt.Errorf("Usage: send-img <jid> <image path> [caption]")
 			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		data, err := os.ReadFile(args[1])
 		if err != nil {
-			log.Errorf("Failed to read %s: %v", args[0], err)
+			errChan <- fmt.Errorf("Failed to read %s: %v", args[0], err)
 			goto sendsome
 		}
 		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaImage)
 		if err != nil {
-			log.Errorf("Failed to upload file: %v", err)
+			errChan <- fmt.Errorf("Failed to upload file: %v", err)
 			goto sendsome
 		}
-		msg := &waProto.Message{ImageMessage: &waProto.ImageMessage{
-			Caption:       proto.String(strings.Join(args[2:], " ")),
-			Url:           proto.String(uploaded.URL),
-			DirectPath:    proto.String(uploaded.DirectPath),
-			MediaKey:      uploaded.MediaKey,
-			Mimetype:      proto.String(http.DetectContentType(data)),
-			FileEncSha256: uploaded.FileEncSHA256,
-			FileSha256:    uploaded.FileSHA256,
-			FileLength:    proto.Uint64(uint64(len(data))),
-		}}
+		msg := &waProto.Message{
+			ImageMessage: &waProto.ImageMessage{
+				Caption:       proto.String(strings.Join(args[2:], " ")),
+				Url:           proto.String(uploaded.URL),
+				DirectPath:    proto.String(uploaded.DirectPath),
+				MediaKey:      uploaded.MediaKey,
+				Mimetype:      proto.String(http.DetectContentType(data)),
+				FileEncSha256: uploaded.FileEncSHA256,
+				FileSha256:    uploaded.FileSHA256,
+				FileLength:    proto.Uint64(uint64(len(data))),
+			},
+		}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
 		if err != nil {
-			log.Errorf("Error sending image message: %v", err)
-		} else {
-			log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
+			errChan <- fmt.Errorf("Error sending image message: %v", err)
+			goto sendsome
 		}
+		log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
+		goto sendsome
 	case "send-file":
 		if len(args) < 2 {
-			log.Errorf("Usage: send-file <jid> <file path> [caption]")
+			errChan <- fmt.Errorf("Usage: send-file <jid> <file path> [caption]")
 			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		data, err := os.ReadFile(args[1])
 		if err != nil {
-			log.Errorf("Failed to read %s: %v", args[0], err)
+			errChan <- fmt.Errorf("Failed to read %s: %v", args[0], err)
 			goto sendsome
 		}
 		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaDocument)
 		if err != nil {
-			log.Errorf("Failed to upload file: %v", err)
+			errChan <- fmt.Errorf("Failed to upload file: %v", err)
 			goto sendsome
 		}
-		msg := &waProto.Message{DocumentMessage: &waProto.DocumentMessage{
-			Caption:       proto.String(strings.Join(args[2:], " ")),
-			Url:           proto.String(uploaded.URL),
-			DirectPath:    proto.String(uploaded.DirectPath),
-			MediaKey:      uploaded.MediaKey,
-			Mimetype:      proto.String(http.DetectContentType(data)),
-			FileName:      proto.String("file"),
-			FileEncSha256: uploaded.FileEncSHA256,
-			FileSha256:    uploaded.FileSHA256,
-			FileLength:    proto.Uint64(uint64(len(data))),
-		}}
+		msg := &waProto.Message{
+			DocumentMessage: &waProto.DocumentMessage{
+				Caption:       proto.String(strings.Join(args[2:], " ")),
+				Url:           proto.String(uploaded.URL),
+				DirectPath:    proto.String(uploaded.DirectPath),
+				MediaKey:      uploaded.MediaKey,
+				Mimetype:      proto.String(http.DetectContentType(data)),
+				FileName:      proto.String("file"),
+				FileEncSha256: uploaded.FileEncSHA256,
+				FileSha256:    uploaded.FileSHA256,
+				FileLength:    proto.Uint64(uint64(len(data))),
+			},
+		}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
 		if err != nil {
-			log.Errorf("Error sending file message: %v", err)
-		} else {
-			log.Infof("File message sent (server timestamp: %s)", resp.Timestamp)
+			errChan <- fmt.Errorf("Error sending file message: %v", err)
+			goto sendsome
 		}
+		log.Infof("File message sent (server timestamp: %s)", resp.Timestamp)
+		goto sendsome
 	case "send":
 		if len(args) < 2 {
-			log.Errorf("Usage: send <jid> <text>")
+			errChan <- fmt.Errorf("Usage: send <jid> <text>")
 			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
-		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
+		msg := &waProto.Message{
+			Conversation: proto.String(strings.Join(args[1:], " ")),
+		}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
 		if err != nil {
-			log.Errorf("Error sending message: %v", err)
-		} else {
-			log.Infof("Message sent (server timestamp: %s)", resp.Timestamp)
+			errChan <- fmt.Errorf("Error sending message: %v", err)
+			goto sendsome
 		}
+		log.Infof("Message sent (server timestamp: %s)", resp.Timestamp)
+		goto sendsome
 	case "reconnect":
 		cli.Disconnect()
 		qrChan, _ := cli.GetQRChannel(context.Background())
 		err := cli.Connect()
 		if err != nil {
-			log.Errorf("Failed to connect: %v", err)
+			errChan <- fmt.Errorf("Failed to connect: %v", err)
+			goto sendsome
 		}
 		for evt := range qrChan {
 			if evt.Event == "code" {
-				// Render the QR code here
-				// e.g. qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-				// or just manually `echo 2@... | qrencode -t ansiutf8` in a terminal
 				output <- evt.Code
 			} else {
 				log.Infof("Login event: %v", evt.Event)
 			}
 		}
+		goto sendsome
 	case "logout":
 		err := cli.Logout()
 		if err != nil {
-			log.Errorf("Error logging out: %v", err)
-		} else {
-			log.Infof("Successfully logged out")
+			errChan <- fmt.Errorf("Error logging out: %v", err)
+			goto sendsome
 		}
+		log.Infof("Successfully logged out")
+		goto sendsome
 	case "appstate":
 		if len(args) < 1 {
-			log.Errorf("Usage: appstate <types...>")
+			errChan <- fmt.Errorf("Usage: appstate <types...>")
 			goto sendsome
 		}
 		names := []appstate.WAPatchName{appstate.WAPatchName(args[0])}
 		if args[0] == "all" {
-			names = []appstate.WAPatchName{appstate.WAPatchRegular, appstate.WAPatchRegularHigh, appstate.WAPatchRegularLow, appstate.WAPatchCriticalUnblockLow, appstate.WAPatchCriticalBlock}
+			names = []appstate.WAPatchName{
+				appstate.WAPatchRegular, appstate.WAPatchRegularHigh, appstate.WAPatchRegularLow,
+				appstate.WAPatchCriticalUnblockLow, appstate.WAPatchCriticalBlock,
+			}
 		}
 		resync := len(args) > 1 && args[1] == "resync"
 		for _, name := range names {
 			err := cli.FetchAppState(name, resync, false)
 			if err != nil {
-				log.Errorf("Failed to sync app state: %v", err)
+				errChan <- fmt.Errorf("Failed to sync app state: %v", err)
+				goto sendsome
 			}
 		}
+		goto sendsome
 	case "request-appstate-key":
 		if len(args) < 1 {
-			log.Errorf("Usage: request-appstate-key <ids...>")
+			errChan <- fmt.Errorf("Usage: request-appstate-key <ids...>")
 			goto sendsome
 		}
 		var keyIDs = make([][]byte, len(args))
 		for i, id := range args {
 			decoded, err := hex.DecodeString(id)
 			if err != nil {
-				log.Errorf("Failed to decode %s as hex: %v", id, err)
+				errChan <- fmt.Errorf("Failed to decode %s as hex: %v", id, err)
 				goto sendsome
 			}
 			keyIDs[i] = decoded
 		}
 		cli.DangerousInternals().RequestAppStateKeys(context.Background(), keyIDs)
-
+		goto sendsome
 	case "whoami":
 		output <- fmt.Sprint(cli.DangerousInternals().GetOwnID())
-
+		goto sendsome
 	case "unavailable-request":
 		if len(args) < 3 {
-			log.Errorf("Usage: unavailable-request <chat JID> <sender JID> <message ID>")
+			errChan <- fmt.Errorf("Usage: unavailable-request <chat JID> <sender JID> <message ID>")
 			goto sendsome
 		}
 		chat, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid chat JID: %s", args[0])
 			goto sendsome
 		}
 		sender, ok := parseJID(args[1])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid sender JID: %s", args[1])
 			goto sendsome
 		}
 		resp, err := cli.SendMessage(
-			context.Background(),
-			cli.Store.ID.ToNonAD(),
+			context.Background(), cli.Store.ID.ToNonAD(),
 			cli.BuildUnavailableMessageRequest(chat, sender, args[2]),
 			whatsmeow.SendRequestExtra{Peer: true},
 		)
 		output <- fmt.Sprintln(resp)
 		output <- fmt.Sprintln(err)
+		errChan <- err
+		goto sendsome
 	case "checkuser":
 		if len(args) < 1 {
-			log.Errorf("Usage: checkuser <phone numbers...>")
+			errChan <- fmt.Errorf("Usage: checkuser <phone numbers...>")
 			goto sendsome
 		}
 		resp, err := cli.IsOnWhatsApp(args)
 		if err != nil {
-			log.Errorf("Failed to check if users are on WhatsApp:", err)
-		} else {
-			for _, item := range resp {
-				if item.VerifiedName != nil {
-					log.Infof("%s: on whatsapp: %t, JID: %s, business name: %s", item.Query, item.IsIn, item.JID, item.VerifiedName.Details.GetVerifiedName())
-				} else {
-					log.Infof("%s: on whatsapp: %t, JID: %s", item.Query, item.IsIn, item.JID)
-				}
+			errChan <- fmt.Errorf("Failed to check if users are on WhatsApp: %v", err)
+			goto sendsome
+		}
+		for _, item := range resp {
+			if item.VerifiedName != nil {
+				log.Infof("%s: on whatsapp: %t, JID: %s, business name: %s", item.Query, item.IsIn, item.JID, item.VerifiedName.Details.GetVerifiedName())
+			} else {
+				log.Infof("%s: on whatsapp: %t, JID: %s", item.Query, item.IsIn, item.JID)
 			}
 		}
+		goto sendsome
 	case "checkupdate":
 		resp, err := cli.CheckUpdate()
 		if err != nil {
-			log.Errorf("Failed to check for updates: %v", err)
-		} else {
-			log.Debugf("Version data: %#v", resp)
-			if resp.ParsedVersion == store.GetWAVersion() {
-				log.Infof("Client is up to date")
-			} else if store.GetWAVersion().LessThan(resp.ParsedVersion) {
-				log.Warnf("Client is outdated")
-			} else {
-				log.Infof("Client is newer than latest")
-			}
+			errChan <- fmt.Errorf("Failed to check for updates: %v", err)
+			goto sendsome
 		}
+		log.Debugf("Version data: %#v", resp)
+		if resp.ParsedVersion == store.GetWAVersion() {
+			log.Infof("Client is up to date")
+		} else if store.GetWAVersion().LessThan(resp.ParsedVersion) {
+			log.Warnf("Client is outdated")
+		} else {
+			log.Infof("Client is newer than latest")
+		}
+		goto sendsome
 	case "subscribepresence":
 		if len(args) < 1 {
-			log.Errorf("Usage: subscribepresence <jid>")
+			errChan <- fmt.Errorf("Usage: subscribepresence <jid>")
 			goto sendsome
 		}
 		jid, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		err := cli.SubscribePresence(jid)
 		if err != nil {
 			output <- fmt.Sprintln(err)
+			errChan <- err
+			goto sendsome
 		}
+		goto sendsome
 	case "presence":
 		if len(args) == 0 {
-			log.Errorf("Usage: presence <available/unavailable>")
+			errChan <- fmt.Errorf("Usage: presence <available/unavailable>")
 			goto sendsome
 		}
 		output <- fmt.Sprint(cli.SendPresence(types.Presence(args[0])))
+		goto sendsome
 	case "chatpresence":
 		if len(args) == 2 {
 			args = append(args, "")
 		} else if len(args) < 2 {
-			log.Errorf("Usage: chatpresence <jid> <composing/paused> [audio]")
+			errChan <- fmt.Errorf("Usage: chatpresence <jid> <composing/paused> [audio]")
 			goto sendsome
 		}
 		jid, _ := types.ParseJID(args[0])
 		output <- fmt.Sprint(cli.SendChatPresence(jid, types.ChatPresence(args[1]), types.ChatPresenceMedia(args[2])))
+		goto sendsome
 	case "privacysettings":
 		resp, err := cli.TryFetchPrivacySettings(false)
 		if err != nil {
 			output <- fmt.Sprintln(err)
-		} else {
-			output <- fmt.Sprintf("%+v\n", resp)
+			errChan <- err
+			goto sendsome
 		}
+		output <- fmt.Sprintf("%+v\n", resp)
+		goto sendsome
 	case "getuser":
 		if len(args) < 1 {
-			log.Errorf("Usage: getuser <jids...>")
+			errChan <- fmt.Errorf("Usage: getuser <jids...>")
 			goto sendsome
 		}
 		var jids []types.JID
 		for _, arg := range args {
 			jid, ok := parseJID(arg)
 			if !ok {
+				errChan <- fmt.Errorf("Invalid JID: %s", arg)
 				goto sendsome
 			}
 			jids = append(jids, jid)
 		}
 		resp, err := cli.GetUserInfo(jids)
 		if err != nil {
-			log.Errorf("Failed to get user info: %v", err)
-		} else {
-			for jid, info := range resp {
-				log.Infof("%s: %+v", jid, info)
-			}
+			errChan <- fmt.Errorf("Failed to get user info: %v", err)
+			goto sendsome
 		}
+		for jid, info := range resp {
+			log.Infof("%s: %+v", jid, info)
+		}
+		goto sendsome
 	case "mediaconn":
 		conn, err := cli.DangerousInternals().RefreshMediaConn(false)
 		if err != nil {
-			log.Errorf("Failed to get media connection: %v", err)
-		} else {
-			log.Infof("Media connection: %+v", conn)
+			errChan <- fmt.Errorf("Failed to get media connection: %v", err)
+			goto sendsome
 		}
+		log.Infof("Media connection: %+v", conn)
+		goto sendsome
 	case "getavatar":
 		if len(args) < 1 {
-			log.Errorf("Usage: getavatar <jid> [existing ID] [--preview] [--community]")
+			errChan <- fmt.Errorf("Usage: getavatar <jid> [existing ID] [--preview] [--community]")
 			goto sendsome
 		}
 		jid, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		existingID := ""
@@ -509,162 +553,181 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 			ExistingID:  existingID,
 		})
 		if err != nil {
-			log.Errorf("Failed to get avatar: %v", err)
+			errChan <- fmt.Errorf("Failed to get avatar: %v", err)
+			goto sendsome
 		} else if pic != nil {
 			log.Infof("Got avatar ID %s: %s", pic.ID, pic.URL)
 		} else {
 			log.Infof("No avatar found")
 		}
+		goto sendsome
 	case "getgroup":
 		if len(args) < 1 {
-			log.Errorf("Usage: getgroup <jid>")
+			errChan <- fmt.Errorf("Usage: getgroup <jid>")
 			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		} else if group.Server != types.GroupServer {
-			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
+			errChan <- fmt.Errorf("Input must be a group JID (@%s)", types.GroupServer)
 			goto sendsome
 		}
 		resp, err := cli.GetGroupInfo(group)
 		if err != nil {
-			log.Errorf("Failed to get group info: %v", err)
-		} else {
-			log.Infof("Group info: %+v", resp)
+			errChan <- fmt.Errorf("Failed to get group info: %v", err)
+			goto sendsome
 		}
+		log.Infof("Group info: %+v", resp)
+		goto sendsome
 	case "subgroups":
 		if len(args) < 1 {
-			log.Errorf("Usage: subgroups <jid>")
+			errChan <- fmt.Errorf("Usage: subgroups <jid>")
 			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		} else if group.Server != types.GroupServer {
-			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
+			errChan <- fmt.Errorf("Input must be a group JID (@%s)", types.GroupServer)
 			goto sendsome
 		}
 		resp, err := cli.GetSubGroups(group)
 		if err != nil {
-			log.Errorf("Failed to get subgroups: %v", err)
-		} else {
-			for _, sub := range resp {
-				log.Infof("Subgroup: %+v", sub)
-			}
+			errChan <- fmt.Errorf("Failed to get subgroups: %v", err)
+			goto sendsome
 		}
+		for _, sub := range resp {
+			log.Infof("Subgroup: %+v", sub)
+		}
+		goto sendsome
 	case "communityparticipants":
 		if len(args) < 1 {
-			log.Errorf("Usage: communityparticipants <jid>")
+			errChan <- fmt.Errorf("Usage: communityparticipants <jid>")
 			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		} else if group.Server != types.GroupServer {
-			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
+			errChan <- fmt.Errorf("Input must be a group JID (@%s)", types.GroupServer)
 			goto sendsome
 		}
 		resp, err := cli.GetLinkedGroupsParticipants(group)
 		if err != nil {
-			log.Errorf("Failed to get community participants: %v", err)
-		} else {
-			log.Infof("Community participants: %+v", resp)
+			errChan <- fmt.Errorf("Failed to get community participants: %v", err)
+			goto sendsome
 		}
+		log.Infof("Community participants: %+v", resp)
+		goto sendsome
 	case "listgroups":
 		groups, err := cli.GetJoinedGroups()
 		if err != nil {
-			log.Errorf("Failed to get group list: %v", err)
-		} else {
-			for _, group := range groups {
-				log.Infof("%+v", group)
-			}
+			errChan <- fmt.Errorf("Failed to get group list: %v", err)
+			goto sendsome
 		}
+		for _, group := range groups {
+			log.Infof("%+v", group)
+		}
+		goto sendsome
 	case "getinvitelink":
 		if len(args) < 1 {
-			log.Errorf("Usage: getinvitelink <jid> [--reset]")
+			errChan <- fmt.Errorf("Usage: getinvitelink <jid> [--reset]")
 			goto sendsome
 		}
 		group, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		} else if group.Server != types.GroupServer {
-			log.Errorf("Input must be a group JID (@%s)", types.GroupServer)
+			errChan <- fmt.Errorf("Input must be a group JID (@%s)", types.GroupServer)
 			goto sendsome
 		}
 		resp, err := cli.GetGroupInviteLink(group, len(args) > 1 && args[1] == "--reset")
 		if err != nil {
-			log.Errorf("Failed to get group invite link: %v", err)
-		} else {
-			log.Infof("Group invite link: %s", resp)
+			errChan <- fmt.Errorf("Failed to get group invite link: %v", err)
+			goto sendsome
 		}
+		log.Infof("Group invite link: %s", resp)
+		goto sendsome
 	case "queryinvitelink":
 		if len(args) < 1 {
-			log.Errorf("Usage: queryinvitelink <link>")
+			errChan <- fmt.Errorf("Usage: queryinvitelink <link>")
 			goto sendsome
 		}
 		resp, err := cli.GetGroupInfoFromLink(args[0])
 		if err != nil {
-			log.Errorf("Failed to resolve group invite link: %v", err)
-		} else {
-			log.Infof("Group info: %+v", resp)
+			errChan <- fmt.Errorf("Failed to resolve group invite link: %v", err)
+			goto sendsome
 		}
+		log.Infof("Group info: %+v", resp)
+		goto sendsome
 	case "querybusinesslink":
 		if len(args) < 1 {
-			log.Errorf("Usage: querybusinesslink <link>")
+			errChan <- fmt.Errorf("Usage: querybusinesslink <link>")
 			goto sendsome
 		}
 		resp, err := cli.ResolveBusinessMessageLink(args[0])
 		if err != nil {
-			log.Errorf("Failed to resolve business message link: %v", err)
-		} else {
-			log.Infof("Business info: %+v", resp)
+			errChan <- fmt.Errorf("Failed to resolve business message link: %v", err)
+			goto sendsome
 		}
+		log.Infof("Business info: %+v", resp)
+		goto sendsome
 	case "joininvitelink":
 		if len(args) < 1 {
-			log.Errorf("Usage: acceptinvitelink <link>")
+			errChan <- fmt.Errorf("Usage: acceptinvitelink <link>")
 			goto sendsome
 		}
 		groupID, err := cli.JoinGroupWithLink(args[0])
 		if err != nil {
-			log.Errorf("Failed to join group via invite link: %v", err)
-		} else {
-			log.Infof("Joined %s", groupID)
+			errChan <- fmt.Errorf("Failed to join group via invite link: %v", err)
+			goto sendsome
 		}
+		log.Infof("Joined %s", groupID)
+		goto sendsome
 	case "getstatusprivacy":
 		resp, err := cli.GetStatusPrivacy()
 		output <- fmt.Sprintln(err)
 		output <- fmt.Sprintln(resp)
+		goto sendsome
 	case "setdisappeartimer":
 		if len(args) < 2 {
-			log.Errorf("Usage: setdisappeartimer <jid> <days>")
+			errChan <- fmt.Errorf("Usage: setdisappeartimer <jid> <days>")
 			goto sendsome
 		}
 		days, err := strconv.Atoi(args[1])
 		if err != nil {
-			log.Errorf("Invalid duration: %v", err)
+			errChan <- fmt.Errorf("Invalid duration: %v", err)
 			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		err = cli.SetDisappearingTimer(recipient, time.Duration(days)*24*time.Hour)
 		if err != nil {
-			log.Errorf("Failed to set disappearing timer: %v", err)
+			errChan <- fmt.Errorf("Failed to set disappearing timer: %v", err)
+			goto sendsome
 		}
+		goto sendsome
 	case "sendpoll":
 		if len(args) < 7 {
-			log.Errorf("Usage: sendpoll <jid> <max answers> <question> -- <option 1> / <option 2> / ...")
+			errChan <- fmt.Errorf("Usage: sendpoll <jid> <max answers> <question> -- <option 1> / <option 2> / ...")
 			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		maxAnswers, err := strconv.Atoi(args[1])
 		if err != nil {
-			log.Errorf("Number of max answers must be an integer")
+			errChan <- fmt.Errorf("Number of max answers must be an integer")
 			goto sendsome
 		}
 		remainingArgs := strings.Join(args[2:], " ")
@@ -676,13 +739,14 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 		}
 		resp, err := cli.SendMessage(context.Background(), recipient, cli.BuildPollCreation(question, options, maxAnswers))
 		if err != nil {
-			log.Errorf("Error sending message: %v", err)
-		} else {
-			log.Infof("Message sent (server timestamp: %s)", resp.Timestamp)
+			errChan <- fmt.Errorf("Error sending message: %v", err)
+			goto sendsome
 		}
+		log.Infof("Message sent (server timestamp: %s)", resp.Timestamp)
+		goto sendsome
 	case "multisend":
 		if len(args) < 3 {
-			log.Errorf("Usage: multisend <jids...> -- <text>")
+			errChan <- fmt.Errorf("Usage: multisend <jids...> -- <text>")
 			goto sendsome
 		}
 		var recipients []types.JID
@@ -690,12 +754,13 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 			recipient, ok := parseJID(args[0])
 			args = args[1:]
 			if !ok {
+				errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 				goto sendsome
 			}
 			recipients = append(recipients, recipient)
 		}
 		if len(args) == 0 {
-			log.Errorf("Usage: multisend <jids...> -- <text> (the -- is required)")
+			errChan <- fmt.Errorf("Usage: multisend <jids...> -- <text> (the -- is required)")
 			goto sendsome
 		}
 		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
@@ -709,13 +774,15 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 				}
 			}(recipient)
 		}
+		goto sendsome
 	case "react":
 		if len(args) < 3 {
-			log.Errorf("Usage: react <jid> <message ID> <reaction>")
+			errChan <- fmt.Errorf("Usage: react <jid> <message ID> <reaction>")
 			goto sendsome
 		}
 		recipient, ok := parseJID(args[0])
 		if !ok {
+			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
 		messageID := args[1]
@@ -741,133 +808,15 @@ func handleCmd(cmd string, args []string, output chan<- string) {
 		}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
 		if err != nil {
-			log.Errorf("Error sending reaction: %v", err)
-		} else {
-			log.Infof("Reaction sent (server timestamp: %s)", resp.Timestamp)
-		}
-	case "revoke":
-		if len(args) < 2 {
-			log.Errorf("Usage: revoke <jid> <message ID>")
+			errChan <- fmt.Errorf("Error sending reaction: %v", err)
 			goto sendsome
 		}
-		recipient, ok := parseJID(args[0])
-		if !ok {
-			goto sendsome
-		}
-		messageID := args[1]
-		resp, err := cli.SendMessage(context.Background(), recipient, cli.BuildRevoke(recipient, types.EmptyJID, messageID))
-		if err != nil {
-			log.Errorf("Error sending revocation: %v", err)
-		} else {
-			log.Infof("Revocation sent (server timestamp: %s)", resp.Timestamp)
-		}
-	case "setstatus":
-		if len(args) == 0 {
-			log.Errorf("Usage: setstatus <message>")
-			goto sendsome
-		}
-		err := cli.SetStatusMessage(strings.Join(args, " "))
-		if err != nil {
-			log.Errorf("Error setting status message: %v", err)
-		} else {
-			log.Infof("Status updated")
-		}
-	case "archive":
-		if len(args) < 2 {
-			log.Errorf("Usage: archive <jid> <action>")
-			goto sendsome
-		}
-		target, ok := parseJID(args[0])
-		if !ok {
-			goto sendsome
-		}
-		action, err := strconv.ParseBool(args[1])
-		if err != nil {
-			log.Errorf("invalid second argument: %v", err)
-			goto sendsome
-		}
-
-		err = cli.SendAppState(appstate.BuildArchive(target, action, time.Time{}, nil))
-		if err != nil {
-			log.Errorf("Error changing chat's archive state: %v", err)
-		}
-	case "mute":
-		if len(args) < 2 {
-			log.Errorf("Usage: mute <jid> <action>")
-			goto sendsome
-		}
-		target, ok := parseJID(args[0])
-		if !ok {
-			goto sendsome
-		}
-		action, err := strconv.ParseBool(args[1])
-		if err != nil {
-			log.Errorf("invalid second argument: %v", err)
-			goto sendsome
-		}
-
-		err = cli.SendAppState(appstate.BuildMute(target, action, 1*time.Hour))
-		if err != nil {
-			log.Errorf("Error changing chat's mute state: %v", err)
-		}
-	case "pin":
-		if len(args) < 2 {
-			log.Errorf("Usage: pin <jid> <action>")
-			goto sendsome
-		}
-		target, ok := parseJID(args[0])
-		if !ok {
-			goto sendsome
-		}
-		action, err := strconv.ParseBool(args[1])
-		if err != nil {
-			log.Errorf("invalid second argument: %v", err)
-			goto sendsome
-		}
-
-		err = cli.SendAppState(appstate.BuildPin(target, action))
-		if err != nil {
-			log.Errorf("Error changing chat's pin state: %v", err)
-		}
-	case "getblocklist":
-		blocklist, err := cli.GetBlocklist()
-		if err != nil {
-			log.Errorf("Failed to get blocked contacts list: %v", err)
-		} else {
-			log.Infof("Blocklist: %+v", blocklist)
-		}
-	case "block":
-		if len(args) < 1 {
-			log.Errorf("Usage: block <jid>")
-			goto sendsome
-		}
-		jid, ok := parseJID(args[0])
-		if !ok {
-			goto sendsome
-		}
-		resp, err := cli.UpdateBlocklist(jid, events.BlocklistChangeActionBlock)
-		if err != nil {
-			log.Errorf("Error updating blocklist: %v", err)
-		} else {
-			log.Infof("Blocklist updated: %+v", resp)
-		}
-	case "unblock":
-		if len(args) < 1 {
-			log.Errorf("Usage: unblock <jid>")
-			goto sendsome
-		}
-		jid, ok := parseJID(args[0])
-		if !ok {
-			goto sendsome
-		}
-		resp, err := cli.UpdateBlocklist(jid, events.BlocklistChangeActionUnblock)
-		if err != nil {
-			log.Errorf("Error updating blocklist: %v", err)
-		} else {
-			log.Infof("Blocklist updated: %+v", resp)
-		}
+		log.Infof("Reaction sent (server timestamp: %s)", resp.Timestamp)
+		goto sendsome
+	default:
+		errChan <- fmt.Errorf("Unknown command: %s", cmd)
+		goto sendsome
 	}
-	goto sendsome // the catchall
 sendsome:
 	output <- ""
 }

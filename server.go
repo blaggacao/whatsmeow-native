@@ -25,13 +25,18 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	errChan := make(chan error)
 	output := make(chan string)
-	go handleCmd(strings.ToLower(cmd.Cmd), cmd.Args, output)
+	go handleCmd(strings.ToLower(cmd.Cmd), cmd.Args, output, errChan)
 
-	out := <-output
-	// Send the captured output as the response
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(out))
+	select {
+	case err := <-errChan:
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+	case out := <-output:
+		// Send the captured output as the response
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(out))
+	}
 }
 
 func makeServer(addr string) *http.Server {
