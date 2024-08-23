@@ -33,7 +33,10 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	waBinary "go.mau.fi/whatsmeow/binary"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waCommon"
+
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -63,7 +66,7 @@ func main() {
 	}
 	if *requestFullSync {
 		store.DeviceProps.RequireFullSync = proto.Bool(true)
-		store.DeviceProps.HistorySyncConfig = &waProto.DeviceProps_HistorySyncConfig{
+		store.DeviceProps.HistorySyncConfig = &waCompanionReg.DeviceProps_HistorySyncConfig{
 			FullSyncDaysLimit:   proto.Uint32(3650),
 			FullSyncSizeMbLimit: proto.Uint32(102400),
 			StorageQuotaMb:      proto.Uint32(102400),
@@ -261,15 +264,15 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 			errChan <- fmt.Errorf("Failed to upload file: %v", err)
 			goto sendsome
 		}
-		msg := &waProto.Message{
-			ImageMessage: &waProto.ImageMessage{
+		msg := &waE2E.Message{
+			ImageMessage: &waE2E.ImageMessage{
 				Caption:       proto.String(strings.Join(args[2:], " ")),
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(http.DetectContentType(data)),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 			},
 		}
@@ -300,16 +303,16 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 			errChan <- fmt.Errorf("Failed to upload file: %v", err)
 			goto sendsome
 		}
-		msg := &waProto.Message{
-			DocumentMessage: &waProto.DocumentMessage{
+		msg := &waE2E.Message{
+			DocumentMessage: &waE2E.DocumentMessage{
 				Caption:       proto.String(strings.Join(args[2:], " ")),
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(http.DetectContentType(data)),
 				FileName:      proto.String("file"),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 			},
 		}
@@ -330,7 +333,7 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 			errChan <- fmt.Errorf("Invalid JID: %s", args[0])
 			goto sendsome
 		}
-		msg := &waProto.Message{
+		msg := &waE2E.Message{
 			Conversation: proto.String(strings.Join(args[1:], " ")),
 		}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
@@ -447,21 +450,6 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 			} else {
 				log.Infof("%s: on whatsapp: %t, JID: %s", item.Query, item.IsIn, item.JID)
 			}
-		}
-		goto sendsome
-	case "checkupdate":
-		resp, err := cli.CheckUpdate()
-		if err != nil {
-			errChan <- fmt.Errorf("Failed to check for updates: %v", err)
-			goto sendsome
-		}
-		log.Debugf("Version data: %#v", resp)
-		if resp.ParsedVersion == store.GetWAVersion() {
-			log.Infof("Client is up to date")
-		} else if store.GetWAVersion().LessThan(resp.ParsedVersion) {
-			log.Warnf("Client is outdated")
-		} else {
-			log.Infof("Client is newer than latest")
 		}
 		goto sendsome
 	case "subscribepresence":
@@ -776,7 +764,7 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 			errChan <- fmt.Errorf("Usage: multisend <jids...> -- <text> (the -- is required)")
 			goto sendsome
 		}
-		msg := &waProto.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
+		msg := &waE2E.Message{Conversation: proto.String(strings.Join(args[1:], " "))}
 		for _, recipient := range recipients {
 			go func(recipient types.JID) {
 				resp, err := cli.SendMessage(context.Background(), recipient, msg)
@@ -808,15 +796,15 @@ func handleCmd(cmd string, args []string, output chan<- string, errChan chan<- e
 		if reaction == "remove" {
 			reaction = ""
 		}
-		msg := &waProto.Message{
-			ReactionMessage: &waProto.ReactionMessage{
-				Key: &waProto.MessageKey{
-					RemoteJid: proto.String(recipient.String()),
+		msg := &waE2E.Message{
+			ReactionMessage: &waE2E.ReactionMessage{
+				Key: &waCommon.MessageKey{
+					RemoteJID: proto.String(recipient.String()),
 					FromMe:    proto.Bool(fromMe),
-					Id:        proto.String(messageID),
+					ID:        proto.String(messageID),
 				},
 				Text:              proto.String(reaction),
-				SenderTimestampMs: proto.Int64(time.Now().UnixMilli()),
+				SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
 			},
 		}
 		resp, err := cli.SendMessage(context.Background(), recipient, msg)
